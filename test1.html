@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>股票实时监控</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: "Microsoft Yahei"; margin: 20px; background: #f5f5f5; }
+        .box { background: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px #ccc; max-width: 1200px; }
+        h3 { margin-top: 0; }
+        .input-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+        .input-row input { width: 160px; padding: 6px; font-size: 14px; }
+        .input-row button { padding: 6px 16px; background: #0066cc; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+        .input-row button:hover { background: #0052a3; }
+        .input-row button.danger { background: #e74c3c; }
+        .input-row button.danger:hover { background: #c0392b; }
+        .input-row button.gray { background: #999; }
+        .input-row button.gray:hover { background: #777; }
+        .stock-list { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; min-height: 36px; padding: 8px; background: #fafafa; border: 1px dashed #ddd; border-radius: 4px; }
+        .stock-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: #e8f4fd; border: 1px solid #b3d8f0; border-radius: 4px; font-size: 13px; }
+        .stock-tag .del { cursor: pointer; color: #e74c3c; font-weight: bold; font-size: 16px; line-height: 1; }
+        .stock-tag .del:hover { color: #c0392b; }
+        .controls { margin-bottom: 12px; }
+        .controls button { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 8px; }
+        .controls .start { background: #27ae60; color: #fff; }
+        .controls .start:hover { background: #219a52; }
+        .controls .stop { background: #999; color: #fff; }
+        .controls .stop:hover { background: #777; }
+        .status-bar { margin-bottom: 12px; padding: 8px 12px; background: #e8f4fd; border-radius: 4px; font-size: 14px; color: #333; display: none; }
+        .status-bar.active { display: block; }
+        .status-bar .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #00b42a; margin-right: 6px; animation: blink 1s infinite; }
+        @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+        .error-msg { color: #f53f3f; margin-bottom: 8px; padding: 8px; background: #fff0f0; border-radius: 4px; display: none; }
+        .error-msg.show { display: block; }
+        table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+        th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: center; font-size: 14px; }
+        th { background: #eee; }
+        .red { color: #f53f3f; }
+        .green { color: #00b42a; }
+        .gray { color: #666; }
+        .flash-up { animation: flashGreen 0.6s; }
+        .flash-down { animation: flashRed 0.6s; }
+        @keyframes flashGreen { 0% { background: rgba(0, 180, 42, 0.3); } 100% { background: transparent; } }
+        @keyframes flashRed { 0% { background: rgba(245, 63, 63, 0.3); } 100% { background: transparent; } }
+        .empty-msg { color: #999; padding: 20px; text-align: center; }
+        .del-row { cursor: pointer; color: #e74c3c; font-weight: bold; font-size: 18px; line-height: 1; padding: 0 4px; }
+        .del-row:hover { color: #c0392b; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h3>📈 股票实时监控</h3>
+
+        <div class="input-row">
+            <input type="text" id="codeInput" placeholder="输入6位股票代码" />
+            <button onclick="addStock()">➕ 添加</button>
+        </div>
+
+        <div class="stock-list" id="stockList"></div>
+
+        <div class="controls">
+            <button class="start" onclick="startMonitor()">▶ 开始监控</button>
+            <button class="stop" onclick="stopMonitor()">⏹ 停止监控</button>
+        </div>
+
+        <div class="status-bar" id="statusBar">
+            <span class="dot"></span>
+            <span id="statusText">正在实时刷新中...</span>
+        </div>
+        <div class="error-msg" id="errorMsg"></div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>操作</th>
+                    <th>代码</th>
+                    <th>名称</th>
+                    <th>现价</th>
+                    <th>涨跌额</th>
+                    <th>涨跌幅</th>
+                    <th>今开</th>
+                    <th>昨收</th>
+                    <th>最高</th>
+                    <th>最低</th>
+                </tr>
+            </thead>
+            <tbody id="stockTable"></tbody>
+        </table>
+    </div>
+
+    <script>
+        // ===== 状态 =====
+        let timer = null;
+        let stockList = [];          // [{code: 'sz000001', display: '000001'}]
+        let prevData = {};           // { 'sz000001': { price, change, ... } }
+
+        // ===== localStorage 存储 =====
+        const STORAGE_KEY = 'stock_monitor_list';
+
+        function saveStockList() {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(stockList));
+        }
+
+        function loadStockList() {
+            let saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+                try {
+                    stockList = JSON.parse(saved);
+                } catch(e) {
+                    stockList = [];
+                }
+            }
+        }
+
+        // ===== DOM =====
+        const codeInput = document.getElementById('codeInput');
+        const stockListEl = document.getElementById('stockList');
+        const stockTable = document.getElementById('stockTable');
+        const statusBar = document.getElementById('statusBar');
+        const statusText = document.getElementById('statusText');
+        const errorMsg = document.getElementById('errorMsg');
+
+        // ===== 工具函数 =====
+        function autoStockPrefix(codeNum) {
+            let code = String(codeNum).padStart(6, '0');
+            let first2 = code.substring(0, 2);
+            let first3 = code.substring(0, 3);
+            if (first2 === '60' || first2 === '68' || first2 === '50' || first2 === '51' || first2 === '58') {
+                return 'sh' + code;
+            } else if (first3 === '000' || first3 === '001' || first3 === '002' || first3 === '003' || first2 === '30') {
+                return 'sz' + code;
+            } else {
+                return code;
+            }
+        }
+
+        function normalizeCode(input) {
+            let val = input.trim();
+            if (!val) return null;
+            if (/^\d+$/.test(val)) {
+                return { code: autoStockPrefix(val), display: val };
+            }
+            return { code: val, display: val };
+        }
+
+        function showStatus(show) {
+            statusBar.className = 'status-bar' + (show ? ' active' : '');
+        }
+
+        function showError(msg) {
+            errorMsg.textContent = msg;
+            errorMsg.classList.add('show');
+            setTimeout(() => errorMsg.classList.remove('show'), 5000);
+        }
+
+        // GBK 解码
+        function gbkDecode(buffer) {
+            try { return new TextDecoder('gbk').decode(buffer); }
+            catch(e) {
+                try { return new TextDecoder('gb2312').decode(buffer); }
+                catch(e2) { return new TextDecoder('utf-8').decode(buffer); }
+            }
+        }
+
+        // ===== 股票列表管理 =====
+        function renderStockList() {
+            if (stockList.length === 0) {
+                stockListEl.innerHTML = '<span style="color:#999;font-size:13px;">暂无股票，请输入代码添加</span>';
+                return;
+            }
+            stockListEl.innerHTML = stockList.map((item, idx) =>
+                `<span class="stock-tag">
+                    ${item.display}
+                    <span class="del" onclick="removeStock(${idx})">×</span>
+                </span>`
+            ).join('');
+        }
+
+        function addStock() {
+            let normalized = normalizeCode(codeInput.value);
+            if (!normalized) { showError('请输入股票代码'); return; }
+            // 去重
+            if (stockList.some(s => s.code === normalized.code)) {
+                showError('该股票已添加');
+                return;
+            }
+            stockList.push(normalized);
+            saveStockList();
+            renderStockList();
+            codeInput.value = '';
+            codeInput.focus();
+        }
+
+        function removeStock(idx) {
+            stockList.splice(idx, 1);
+            saveStockList();
+            renderStockList();
+            if (timer) refreshTable();
+        }
+
+        function removeStockByCode(code) {
+            let idx = stockList.findIndex(s => s.code === code);
+            if (idx !== -1) {
+                stockList.splice(idx, 1);
+                saveStockList();
+                renderStockList();
+                if (timer) refreshTable();
+            }
+        }
+
+        // ===== 数据获取 =====
+        async function getStockData(code) {
+            try {
+                let response = await fetch('https://qt.gtimg.cn/q=' + code);
+                if (!response.ok) return null;
+                let buffer = await response.arrayBuffer();
+                let text = gbkDecode(buffer);
+                let match = text.match(/="(.+)";/);
+                if (!match) return null;
+                let arr = match[1].split('~');
+                if (arr.length < 35) return null;
+                return {
+                    code: arr[2],
+                    name: arr[1],
+                    price: parseFloat(arr[3]),
+                    preClose: parseFloat(arr[4]),
+                    open: parseFloat(arr[5]),
+                    change: parseFloat(arr[31]),
+                    changePercent: parseFloat(arr[32]),
+                    high: parseFloat(arr[33]),
+                    low: parseFloat(arr[34])
+                };
+            } catch(e) {
+                return null;
+            }
+        }
+
+        // ===== 刷新表格（仅数据变化时更新） =====
+        async function refreshTable() {
+            if (stockList.length === 0) {
+                stockTable.innerHTML = '<tr><td colspan="10" class="empty-msg">请添加股票代码后开始监控</td></tr>';
+                return;
+            }
+
+            let codes = stockList.map(s => s.code);
+            let htmlRows = '';
+            let hasAnyData = false;
+
+            for (let code of codes) {
+                let data = await getStockData(code);
+                if (!data) {
+                    htmlRows += `<tr><td><span class="del-row" onclick="removeStockByCode('${code}')">×</span></td><td>${code}</td><td colspan="8" style="color:#999;">获取数据失败</td></tr>`;
+                    continue;
+                }
+                hasAnyData = true;
+
+                let priceClass = data.change > 0 ? 'red' : (data.change < 0 ? 'green' : 'gray');
+                let prev = prevData[code];
+
+                // 判断是否有变化
+                let isChanged = false;
+                if (!prev || prev.price !== data.price || prev.change !== data.change || prev.changePercent !== data.changePercent) {
+                    isChanged = true;
+                }
+
+                // 记录当前数据
+                prevData[code] = { price: data.price, change: data.change, changePercent: data.changePercent };
+
+                // 闪烁效果：仅数据变化时添加 flash 类
+                let flashClass = '';
+                if (isChanged && prev) {
+                    flashClass = data.change > 0 ? ' flash-up' : (data.change < 0 ? ' flash-down' : '');
+                }
+
+                htmlRows += `
+                    <tr class="${flashClass}">
+                        <td><span class="del-row" onclick="removeStockByCode('${code}')">×</span></td>
+                        <td>${data.code}</td>
+                        <td>${data.name}</td>
+                        <td class="${priceClass}">${data.price.toFixed(2)}</td>
+                        <td class="${priceClass}">${data.change.toFixed(2)}</td>
+                        <td class="${priceClass}">${data.changePercent.toFixed(2)}%</td>
+                        <td>${data.open.toFixed(2)}</td>
+                        <td>${data.preClose.toFixed(2)}</td>
+                        <td>${data.high.toFixed(2)}</td>
+                        <td>${data.low.toFixed(2)}</td>
+                    </tr>`;
+            }
+
+            stockTable.innerHTML = htmlRows;
+
+            if (!hasAnyData) {
+                showError('所有股票数据获取失败，请检查网络或股票代码');
+            }
+        }
+
+        // ===== 开始/停止监控 =====
+        function startMonitor() {
+            if (stockList.length === 0) {
+                showError('请先添加至少一个股票代码');
+                return;
+            }
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+            showStatus(true);
+            statusText.textContent = '正在实时刷新中...';
+            refreshTable();
+            timer = setInterval(refreshTable, 1000);
+        }
+
+        function stopMonitor() {
+            if (timer) {
+                clearInterval(timer);
+                timer = null;
+            }
+            showStatus(false);
+            statusText.textContent = '已停止';
+        }
+
+        // 回车添加
+        codeInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') addStock();
+        });
+
+        // 从 localStorage 加载并渲染
+        loadStockList();
+        renderStockList();
+        stockTable.innerHTML = '<tr><td colspan="10" class="empty-msg">请添加股票代码后开始监控</td></tr>';
+    </script>
+</body>
+</html>
