@@ -61,6 +61,12 @@
             <span class="input-hint">持仓成本和持股数量非必填</span>
         </div>
 
+        <div class="input-row">
+            <input type="file" id="csvFileInput" accept=".csv" style="width:auto;padding:4px;font-size:13px;" />
+            <button onclick="importCSV()" class="gray">📄 导入CSV</button>
+            <span class="input-hint">CSV格式：代码,成本,数量（每行一只股票）</span>
+        </div>
+
         <div class="stock-list" id="stockList"></div>
 
         <div class="controls">
@@ -124,6 +130,7 @@
         const codeInput = document.getElementById('codeInput');
         const costInput = document.getElementById('costInput');
         const qtyInput = document.getElementById('qtyInput');
+        const csvFileInput = document.getElementById('csvFileInput');
         const stockListEl = document.getElementById('stockList');
         const stockTable = document.getElementById('stockTable');
         const statusBar = document.getElementById('statusBar');
@@ -249,6 +256,97 @@
                 renderStockList();
                 if (timer) refreshTable();
             }
+        }
+
+        // ===== CSV 导入 =====
+        function importCSV() {
+            let file = csvFileInput.files[0];
+            if (!file) {
+                showError('请先选择CSV文件');
+                return;
+            }
+
+            let reader = new FileReader();
+            reader.onload = function(e) {
+                let text = e.target.result;
+                let lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+                let addedCount = 0;
+                let skipCount = 0;
+                let errorLines = [];
+
+                for (let i = 0; i < lines.length; i++) {
+                    let line = lines[i].trim();
+                    // 跳过可能的表头行（包含非数字的列名）
+                    if (i === 0 && /代码|code|成本|cost|数量|qty|quantity/i.test(line)) {
+                        continue;
+                    }
+
+                    let parts = line.split(',');
+                    if (parts.length < 1) continue;
+
+                    let codeStr = parts[0].trim();
+                    let costStr = parts.length > 1 ? parts[1].trim() : '';
+                    let qtyStr = parts.length > 2 ? parts[2].trim() : '';
+
+                    // 解析代码
+                    let normalized = normalizeCode(codeStr);
+                    if (!normalized) {
+                        errorLines.push(`第${i+1}行: 无效代码 "${codeStr}"`);
+                        continue;
+                    }
+
+                    // 去重
+                    if (stockList.some(s => s.code === normalized.code)) {
+                        skipCount++;
+                        continue;
+                    }
+
+                    // 解析成本和数量
+                    let cost = costStr !== '' ? parseFloat(costStr) : null;
+                    let quantity = qtyStr !== '' ? parseInt(qtyStr) : null;
+
+                    // 如果只填了其中一个，跳过
+                    if ((costStr !== '' && qtyStr === '') || (costStr === '' && qtyStr !== '')) {
+                        errorLines.push(`第${i+1}行: 成本和数量需同时填写或不填`);
+                        continue;
+                    }
+
+                    // 校验数值
+                    if (cost !== null && (isNaN(cost) || cost < 0)) {
+                        errorLines.push(`第${i+1}行: 无效成本 "${costStr}"`);
+                        continue;
+                    }
+                    if (quantity !== null && (isNaN(quantity) || quantity < 0)) {
+                        errorLines.push(`第${i+1}行: 无效数量 "${qtyStr}"`);
+                        continue;
+                    }
+
+                    stockList.push({
+                        ...normalized,
+                        cost: cost,
+                        quantity: quantity
+                    });
+                    addedCount++;
+                }
+
+                saveStockList();
+                renderStockList();
+
+                let msg = `导入完成：成功添加 ${addedCount} 只股票`;
+                if (skipCount > 0) msg += `，${skipCount} 只已存在已跳过`;
+                if (errorLines.length > 0) msg += `，${errorLines.length} 行有错误`;
+                showError(msg);
+
+                // 如果有错误，在控制台输出详细信息
+                if (errorLines.length > 0) {
+                    console.log('CSV导入错误详情：');
+                    errorLines.forEach(l => console.log(l));
+                }
+
+                // 清空文件选择
+                csvFileInput.value = '';
+            };
+            reader.readAsText(file);
         }
 
         // ===== 数据获取 =====
