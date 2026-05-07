@@ -10,6 +10,7 @@
         h3 { margin-top: 0; }
         .input-row { display: flex; gap: 10px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
         .input-row input { width: 160px; padding: 6px; font-size: 14px; }
+        .input-row input.small-input { width: 100px; }
         .input-row button { padding: 6px 16px; background: #0066cc; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
         .input-row button:hover { background: #0052a3; }
         .input-row button.danger { background: #e74c3c; }
@@ -45,6 +46,7 @@
         .empty-msg { color: #999; padding: 20px; text-align: center; }
         .del-row { cursor: pointer; color: #e74c3c; font-weight: bold; font-size: 18px; line-height: 1; padding: 0 4px; }
         .del-row:hover { color: #c0392b; }
+        .input-hint { font-size: 12px; color: #999; }
     </style>
 </head>
 <body>
@@ -53,7 +55,10 @@
 
         <div class="input-row">
             <input type="text" id="codeInput" placeholder="输入6位股票代码" />
+            <input type="number" id="costInput" class="small-input" placeholder="持仓成本(元)" step="0.01" min="0" />
+            <input type="number" id="qtyInput" class="small-input" placeholder="持股数量(股)" step="1" min="0" />
             <button onclick="addStock()">➕ 添加</button>
+            <span class="input-hint">持仓成本和持股数量非必填</span>
         </div>
 
         <div class="stock-list" id="stockList"></div>
@@ -82,6 +87,9 @@
                     <th>昨收</th>
                     <th>最高</th>
                     <th>最低</th>
+                    <th>持仓成本</th>
+                    <th>持股数量</th>
+                    <th>持仓收益</th>
                 </tr>
             </thead>
             <tbody id="stockTable"></tbody>
@@ -91,7 +99,7 @@
     <script>
         // ===== 状态 =====
         let timer = null;
-        let stockList = [];          // [{code: 'sz000001', display: '000001'}]
+        let stockList = [];          // [{code: 'sz000001', display: '000001', cost: 10.5, quantity: 100}]
         let prevData = {};           // { 'sz000001': { price, change, ... } }
 
         // ===== localStorage 存储 =====
@@ -114,6 +122,8 @@
 
         // ===== DOM =====
         const codeInput = document.getElementById('codeInput');
+        const costInput = document.getElementById('costInput');
+        const qtyInput = document.getElementById('qtyInput');
         const stockListEl = document.getElementById('stockList');
         const stockTable = document.getElementById('stockTable');
         const statusBar = document.getElementById('statusBar');
@@ -168,12 +178,16 @@
                 stockListEl.innerHTML = '<span style="color:#999;font-size:13px;">暂无股票，请输入代码添加</span>';
                 return;
             }
-            stockListEl.innerHTML = stockList.map((item, idx) =>
-                `<span class="stock-tag">
-                    ${item.display}
+            stockListEl.innerHTML = stockList.map((item, idx) => {
+                let extra = '';
+                if (item.cost != null && item.quantity != null) {
+                    extra = ` (成本:${item.cost} 数量:${item.quantity})`;
+                }
+                return `<span class="stock-tag">
+                    ${item.display}${extra}
                     <span class="del" onclick="removeStock(${idx})">×</span>
-                </span>`
-            ).join('');
+                </span>`;
+            }).join('');
         }
 
         function addStock() {
@@ -184,10 +198,39 @@
                 showError('该股票已添加');
                 return;
             }
-            stockList.push(normalized);
+
+            // 读取持仓成本和持股数量（非必填）
+            let costVal = costInput.value.trim();
+            let qtyVal = qtyInput.value.trim();
+            let cost = costVal !== '' ? parseFloat(costVal) : null;
+            let quantity = qtyVal !== '' ? parseInt(qtyVal) : null;
+
+            // 如果只填了其中一个，提示用户
+            if ((costVal !== '' && qtyVal === '') || (costVal === '' && qtyVal !== '')) {
+                showError('持仓成本和持股数量需同时填写或不填');
+                return;
+            }
+
+            // 校验数值合法性
+            if (cost !== null && (isNaN(cost) || cost < 0)) {
+                showError('持仓成本请输入有效正数');
+                return;
+            }
+            if (quantity !== null && (isNaN(quantity) || quantity < 0)) {
+                showError('持股数量请输入有效正整数');
+                return;
+            }
+
+            stockList.push({
+                ...normalized,
+                cost: cost,
+                quantity: quantity
+            });
             saveStockList();
             renderStockList();
             codeInput.value = '';
+            costInput.value = '';
+            qtyInput.value = '';
             codeInput.focus();
         }
 
@@ -238,7 +281,7 @@
         // ===== 刷新表格（仅数据变化时更新） =====
         async function refreshTable() {
             if (stockList.length === 0) {
-                stockTable.innerHTML = '<tr><td colspan="10" class="empty-msg">请添加股票代码后开始监控</td></tr>';
+                stockTable.innerHTML = '<tr><td colspan="13" class="empty-msg">请添加股票代码后开始监控</td></tr>';
                 return;
             }
 
@@ -246,10 +289,12 @@
             let htmlRows = '';
             let hasAnyData = false;
 
-            for (let code of codes) {
+            for (let i = 0; i < stockList.length; i++) {
+                let stock = stockList[i];
+                let code = stock.code;
                 let data = await getStockData(code);
                 if (!data) {
-                    htmlRows += `<tr><td><span class="del-row" onclick="removeStockByCode('${code}')">×</span></td><td>${code}</td><td colspan="8" style="color:#999;">获取数据失败</td></tr>`;
+                    htmlRows += `<tr><td><span class="del-row" onclick="removeStockByCode('${code}')">×</span></td><td>${code}</td><td colspan="11" style="color:#999;">获取数据失败</td></tr>`;
                     continue;
                 }
                 hasAnyData = true;
@@ -272,6 +317,15 @@
                     flashClass = data.change > 0 ? ' flash-up' : (data.change < 0 ? ' flash-down' : '');
                 }
 
+                // 计算持仓收益
+                let profitDisplay = '-';
+                let profitClass = 'gray';
+                if (stock.cost != null && stock.quantity != null && stock.quantity > 0) {
+                    let profit = (data.price - stock.cost) * stock.quantity;
+                    profitDisplay = profit.toFixed(2);
+                    profitClass = profit > 0 ? 'red' : (profit < 0 ? 'green' : 'gray');
+                }
+
                 htmlRows += `
                     <tr class="${flashClass}">
                         <td><span class="del-row" onclick="removeStockByCode('${code}')">×</span></td>
@@ -284,6 +338,9 @@
                         <td>${data.preClose.toFixed(2)}</td>
                         <td>${data.high.toFixed(2)}</td>
                         <td>${data.low.toFixed(2)}</td>
+                        <td>${stock.cost != null ? stock.cost.toFixed(2) : '-'}</td>
+                        <td>${stock.quantity != null ? stock.quantity : '-'}</td>
+                        <td class="${profitClass}">${profitDisplay}</td>
                     </tr>`;
             }
 
@@ -323,11 +380,17 @@
         codeInput.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') addStock();
         });
+        costInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') addStock();
+        });
+        qtyInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') addStock();
+        });
 
         // 从 localStorage 加载并渲染
         loadStockList();
         renderStockList();
-        stockTable.innerHTML = '<tr><td colspan="10" class="empty-msg">请添加股票代码后开始监控</td></tr>';
+        stockTable.innerHTML = '<tr><td colspan="13" class="empty-msg">请添加股票代码后开始监控</td></tr>';
     </script>
 </body>
 </html>
