@@ -57,6 +57,9 @@
         th.dragging { opacity: 0.5; }
         th.drag-over { background: #b3d8f0; }
         .sort-hint { font-size: 11px; color: #999; margin-left: 8px; font-weight: normal; }
+        .name-cell { line-height: 1.4; }
+        .name-cell .name { font-size: 14px; }
+        .name-cell .market-value { font-size: 11px; color: #888; }
     </style>
 </head>
 <body>
@@ -99,7 +102,7 @@
                 <tr id="headerRow">
                     <th data-field="操作" data-sortable="false">操作</th>
                     <th data-field="代码" data-type="string">代码</th>
-                    <th data-field="名称" data-type="string">名称</th>
+                    <th data-field="名称/市值" data-type="number">名称/市值</th>
                     <th data-field="现价" data-type="number">现价</th>
                     <th data-field="涨跌额" data-type="number">涨跌额</th>
                     <th data-field="涨跌幅" data-type="number">涨跌幅</th>
@@ -329,7 +332,12 @@
         function getSortValue(stock, data, field) {
             switch (field) {
                 case '代码': return stock.display;
-                case '名称': return data ? data.name : '';
+                case '名称/市值': {
+                    if (stock.quantity != null && stock.quantity > 0 && data) {
+                        return stock.quantity * data.price;
+                    }
+                    return -Infinity;
+                }
                 case '现价': return data ? data.price : 0;
                 case '涨跌额': return data ? data.change : 0;
                 case '涨跌幅': return data ? data.changePercent : 0;
@@ -624,11 +632,18 @@
                     todayProfitClass = priceClass;
                 }
 
+                // 计算市值 = 持股数量 × 现价
+                let marketValueDisplay = '-';
+                if (stock.quantity != null && stock.quantity > 0) {
+                    let marketValue = stock.quantity * data.price;
+                    marketValueDisplay = marketValue.toFixed(2);
+                }
+
                 // 按 columnOrder 构建列数据
                 let colData = {};
                 colData['操作'] = `<span class="del-row" onclick="removeStockByCode('${code}')">×</span>`;
                 colData['代码'] = data.code;
-                colData['名称'] = data.name;
+                colData['名称/市值'] = `<div class="name-cell"><div class="name">${data.name}</div><div class="market-value">市值: ${marketValueDisplay}</div></div>`;
                 colData['现价'] = `<span class="${priceClass}">${data.price.toFixed(2)}</span>`;
                 colData['涨跌额'] = `<span class="${priceClass}">${data.change.toFixed(2)}</span>`;
                 colData['涨跌幅'] = `<span class="${priceClass}">${data.changePercent.toFixed(2)}%</span>`;
