@@ -21,12 +21,14 @@
         .stock-tag { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; background: #e8f4fd; border: 1px solid #b3d8f0; border-radius: 4px; font-size: 13px; }
         .stock-tag .del { cursor: pointer; color: #e74c3c; font-weight: bold; font-size: 16px; line-height: 1; }
         .stock-tag .del:hover { color: #c0392b; }
-        .controls { margin-bottom: 12px; }
-        .controls button { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; margin-right: 8px; }
+        .controls { margin-bottom: 12px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .controls button { padding: 8px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 14px; }
         .controls .start { background: #27ae60; color: #fff; }
         .controls .start:hover { background: #219a52; }
         .controls .stop { background: #999; color: #fff; }
         .controls .stop:hover { background: #777; }
+        .controls .speed-label { font-size: 13px; color: #555; margin-left: 4px; }
+        .controls .speed-input { width: 50px; padding: 4px 6px; font-size: 13px; text-align: center; border: 1px solid #ccc; border-radius: 4px; }
         .status-bar { margin-bottom: 12px; padding: 8px 12px; background: #e8f4fd; border-radius: 4px; font-size: 14px; color: #333; display: none; }
         .status-bar.active { display: block; }
         .status-bar .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #00b42a; margin-right: 6px; animation: blink 1s infinite; }
@@ -83,6 +85,9 @@
         <div class="stock-list" id="stockList"></div>
 
         <div class="controls">
+            <span class="speed-label">刷新速度</span>
+            <input type="number" class="speed-input" id="speedInput" value="3" min="1" max="60" step="1" />
+            <span class="speed-label">秒</span>
             <button class="start" onclick="startMonitor()">▶ 开始监控</button>
             <button class="stop" onclick="stopMonitor()">⏹ 停止监控</button>
             <span class="summary-bar" id="summaryBar">
@@ -179,6 +184,35 @@
         const statusText = document.getElementById('statusText');
         const summaryValue = document.getElementById('summaryValue');
         const errorMsg = document.getElementById('errorMsg');
+        const speedInput = document.getElementById('speedInput');
+
+        // ===== 刷新速度管理 =====
+        const SPEED_KEY = 'stock_refresh_speed';
+
+        function loadSpeed() {
+            let saved = localStorage.getItem(SPEED_KEY);
+            if (saved) {
+                try {
+                    let val = parseInt(saved);
+                    if (val >= 1 && val <= 60) {
+                        speedInput.value = val;
+                    }
+                } catch(e) {}
+            }
+        }
+
+        function saveSpeed() {
+            localStorage.setItem(SPEED_KEY, speedInput.value);
+        }
+
+        function getRefreshInterval() {
+            let val = parseInt(speedInput.value);
+            if (isNaN(val) || val < 1) val = 3;
+            if (val > 60) val = 60;
+            speedInput.value = val;
+            saveSpeed();
+            return val * 1000;
+        }
 
         // ===== 工具函数 =====
         function autoStockPrefix(codeNum) {
@@ -720,10 +754,11 @@
                 clearInterval(timer);
                 timer = null;
             }
+            let interval = getRefreshInterval();
             showStatus(true);
-            statusText.textContent = '正在实时刷新中...';
+            statusText.textContent = `每 ${interval / 1000} 秒刷新中...`;
             refreshTable();
-            timer = setInterval(refreshTable, 1000);
+            timer = setInterval(refreshTable, interval);
         }
 
         function stopMonitor() {
@@ -749,6 +784,7 @@
         // ===== 初始化 =====
         loadStockList();
         renderStockList();
+        loadSpeed();
         initColumnOrder();
         initColumnDrag();
         bindSortHeaders();
