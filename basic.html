@@ -96,6 +96,7 @@
                     <th>持仓成本</th>
                     <th>持股数量</th>
                     <th>持仓收益</th>
+                    <th>今日收益</th>
                 </tr>
             </thead>
             <tbody id="stockTable"></tbody>
@@ -379,7 +380,7 @@
         // ===== 刷新表格（仅数据变化时更新） =====
         async function refreshTable() {
             if (stockList.length === 0) {
-                stockTable.innerHTML = '<tr><td colspan="13" class="empty-msg">请添加股票代码后开始监控</td></tr>';
+                stockTable.innerHTML = '<tr><td colspan="14" class="empty-msg">请添加股票代码后开始监控</td></tr>';
                 return;
             }
 
@@ -392,7 +393,7 @@
                 let code = stock.code;
                 let data = await getStockData(code);
                 if (!data) {
-                    htmlRows += `<tr><td><span class="del-row" onclick="removeStockByCode('${code}')">×</span></td><td>${code}</td><td colspan="11" style="color:#999;">获取数据失败</td></tr>`;
+                    htmlRows += `<tr><td><span class="del-row" onclick="removeStockByCode('${code}')">×</span></td><td>${code}</td><td colspan="12" style="color:#999;">获取数据失败</td></tr>`;
                     continue;
                 }
                 hasAnyData = true;
@@ -424,6 +425,19 @@
                     profitClass = profit > 0 ? 'red' : (profit < 0 ? 'green' : 'gray');
                 }
 
+                // 计算今日收益 = (现价 - 昨收) × 持股数量（若有持股数量），否则显示涨跌额
+                let todayProfitDisplay = '-';
+                let todayProfitClass = 'gray';
+                if (stock.quantity != null && stock.quantity > 0) {
+                    let todayProfit = (data.price - data.preClose) * stock.quantity;
+                    todayProfitDisplay = todayProfit.toFixed(2);
+                    todayProfitClass = todayProfit > 0 ? 'red' : (todayProfit < 0 ? 'green' : 'gray');
+                } else {
+                    // 没有持股数量时，显示涨跌额作为参考
+                    todayProfitDisplay = data.change.toFixed(2);
+                    todayProfitClass = priceClass;
+                }
+
                 htmlRows += `
                     <tr class="${flashClass}">
                         <td><span class="del-row" onclick="removeStockByCode('${code}')">×</span></td>
@@ -439,6 +453,7 @@
                         <td>${stock.cost != null ? stock.cost.toFixed(2) : '-'}</td>
                         <td>${stock.quantity != null ? stock.quantity : '-'}</td>
                         <td class="${profitClass}">${profitDisplay}</td>
+                        <td class="${todayProfitClass}">${todayProfitDisplay}</td>
                     </tr>`;
             }
 
@@ -488,7 +503,7 @@
         // 从 localStorage 加载并渲染
         loadStockList();
         renderStockList();
-        stockTable.innerHTML = '<tr><td colspan="13" class="empty-msg">请添加股票代码后开始监控</td></tr>';
+        stockTable.innerHTML = '<tr><td colspan="14" class="empty-msg">请添加股票代码后开始监控</td></tr>';
     </script>
 </body>
 </html>
