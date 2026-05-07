@@ -22,6 +22,6 @@ jobs:
 
           # VPS 上执行的命令
           script: |
-            cd /var/www/stocks.90980.ccwu.cc
+            cd /var/www/stock.90980.ccwu.cc
             git pull
             echo "✅ 部署成功：代码已更新到最新版本"
