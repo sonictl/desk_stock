@@ -643,7 +643,7 @@
                 let colData = {};
                 colData['操作'] = `<span class="del-row" onclick="removeStockByCode('${code}')">×</span>`;
                 colData['代码'] = data.code;
-                colData['名称/市值'] = `<div class="name-cell"><div class="name">${data.name}</div><div class="market-value">市值: ${marketValueDisplay}</div></div>`;
+                colData['名称/市值'] = `<div class="name-cell"><div class="name">${data.name}</div><div class="market-value">${marketValueDisplay}</div></div>`;
                 colData['现价'] = `<span class="${priceClass}">${data.price.toFixed(2)}</span>`;
                 colData['涨跌额'] = `<span class="${priceClass}">${data.change.toFixed(2)}</span>`;
                 colData['涨跌幅'] = `<span class="${priceClass}">${data.changePercent.toFixed(2)}%</span>`;
