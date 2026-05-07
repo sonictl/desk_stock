@@ -1,0 +1,27 @@
+name: Auto Deploy to VPS
+
+# 触发条件：push 到 main 分支自动执行
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:  # 允许手动点击运行
+
+# 部署任务
+jobs:
+  deploy-to-vps:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@master
+        with:
+          # 从 GitHub Secrets 读取
+          host: ${{ secrets.RN1G_VPS_HOST }}
+          username: ${{ secrets.RN1G_VPS_USER }}
+          key: ${{ secrets.RN1G_VPS_PRIVATE_KEY }}
+          port: ${{ secrets.RN1G_VPS_PORT || 22 }}
+
+          # VPS 上执行的命令
+          script: |
+            cd /var/www/stocks.90980.ccwu.cc
+            git pull
+            echo "✅ 部署成功：代码已更新到最新版本"
